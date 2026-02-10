@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Descargador Ok.ru - Alta Calidad</title>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel para compilar JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS para estilos modernos -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Iconos Lucide -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #e2e8f0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { Download, Link, AlertCircle, Video, CheckCircle, Loader2 } = lucide;
+
+        function App() {
+            const [url, setUrl] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState(null);
+            const [videoData, setVideoData] = useState(null);
+
+            // Función para extraer el ID del video de la URL de Ok.ru
+            const extractVideoId = (inputUrl) => {
+                try {
+                    // Soporta formatos: ok.ru/video/12345, ok.ru/live/12345
+                    const regex = /(?:ok\.ru\/|ok\.ru\/video\/|ok\.ru\/live\/)(\d+)/;
+                    const match = inputUrl.match(regex);
+                    return match ? match[1] : null;
+                } catch (e) {
+                    return null;
+                }
+            };
+
+            const handleSearch = async (e) => {
+                e.preventDefault();
+                setError(null);
+                setVideoData(null);
+                setLoading(true);
+
+                const videoId = extractVideoId(url);
+
+                if (!videoId) {
+                    setError("No se encontró un ID de video válido en el enlace. Asegúrate de que sea un enlace de ok.ru/video/...");
+                    setLoading(false);
+                    return;
+                }
+
+                try {
+                    // Usamos un proxy CORS (allorigins) para obtener los metadatos JSON de Ok.ru
+                    // Ok.ru expone metadatos en: https://ok.ru/dk?cmd=videoPlayerMetadata&mid={ID}
+                    const metadataUrl = `https://ok.ru/dk?cmd=videoPlayerMetadata&mid=${videoId}`;
+                    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(metadataUrl)}`;
+
+                    const response = await fetch(proxyUrl);
+                    const data = await response.json();
+                    
+                    if (!data.contents) {
+                        throw new Error("No se pudo conectar con Ok.ru a través del proxy.");
+                    }
+
+                    // El contenido viene como string dentro del JSON del proxy, hay que parsearlo
+                    const okruData = JSON.parse(data.contents);
+
+                    if (okruData.error) {
+                        throw new Error("El video es privado, ha sido eliminado o no existe.");
+                    }
+
+                    // Filtrar y ordenar las calidades
+                    if (okruData.videos && okruData.videos.length > 0) {
+                        // Ordenar de mayor a menor calidad
+                        const qualityOrder = { 'mobile': 0, 'lowest': 1, 'low': 2, 'sd': 3, 'hd': 4, 'full': 5, 'quad': 6 };
+                        
+                        const sortedVideos = okruData.videos.sort((a, b) => {
+                            const qA = qualityOrder[a.name] || 0;
+                            const qB = qualityOrder[b.name] || 0;
+                            return qB - qA;
+                        });
+
+                        setVideoData({
+                            title: okruData.movie.title || "Video de Ok.ru",
+                            poster: okruData.movie.poster || "",
+                            author: okruData.author ? okruData.author.name : "Desconocido",
+                            duration: okruData.movie.duration,
+                            qualities: sortedVideos
+                        });
+                    } else {
+                        throw new Error("No se encontraron enlaces de descarga directos para este video.");
+                    }
+
+                } catch (err) {
+                    console.error(err);
+                    setError(err.message || "Ocurrió un error al intentar obtener el video.");
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            // Convertir segundos a formato mm:ss
+            const formatTime = (seconds) => {
+                const m = Math.floor(seconds / 60);
+                const s = seconds % 60;
+                return `${m}:${s < 10 ? '0' : ''}${s}`;
+            };
+
+            return (
+                <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-900 to-slate-800">
+                    <div className="w-full max-w-2xl">
+                        
+                        {/* Header */}
+                        <div className="text-center mb-8 animate-fade-in">
+                            <h1 className="text-4xl font-bold text-orange-500 mb-2 flex items-center justify-center gap-3">
+                                <Video size={40} />
+                                OK.RU Downloader
+                            </h1>
+                            <p className="text-slate-400">Descarga videos en alta calidad (MP4) directamente.</p>
+                        </div>
+
+                        {/* Search Box */}
+                        <div className="glass-panel rounded-2xl p-6 shadow-2xl mb-6">
+                            <form onSubmit={handleSearch} className="flex flex-col md:flex-row gap-4">
+                                <div className="relative flex-grow">
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                        <Link className="text-slate-500" size={20} />
+                                    </div>
+                                    <input 
+                                        type="text" 
+                                        className="w-full pl-10 pr-4 py-3 bg-slate-800 border border-slate-600 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none text-white placeholder-slate-500 transition-all"
+                                        placeholder="Pega el enlace aquí (ej: https://ok.ru/video/123456...)"
+                                        value={url}
+                                        onChange={(e) => setUrl(e.target.value)}
+                                    />
+                                </div>
+                                <button 
+                                    type="submit" 
+                                    disabled={loading}
+                                    className="bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-8 rounded-xl transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                >
+                                    {loading ? <Loader2 className="animate-spin" /> : <Download size={20} />}
+                                    {loading ? "Procesando..." : "Buscar"}
+                                </button>
+                            </form>
+                        </div>
+
+                        {/* Error Message */}
+                        {error && (
+                            <div className="bg-red-500/10 border border-red-500/50 text-red-200 p-4 rounded-xl mb-6 flex items-center gap-3 animate-fade-in">
+                                <AlertCircle className="text-red-500 flex-shrink-0" />
+                                <p>{error}</p>
+                            </div>
+                        )}
+
+                        {/* Results */}
+                        {videoData && (
+                            <div className="glass-panel rounded-2xl p-6 shadow-2xl animate-fade-in">
+                                <div className="flex flex-col md:flex-row gap-6">
+                                    {/* Thumbnail */}
+                                    <div className="w-full md:w-1/3">
+                                        <div className="aspect-video bg-slate-800 rounded-lg overflow-hidden relative shadow-lg">
+                                            <img 
+                                                src={videoData.poster} 
+                                                alt={videoData.title} 
+                                                className="w-full h-full object-cover"
+                                                onError={(e) => {e.target.src = 'https://via.placeholder.com/320x180?text=No+Preview'}}
+                                            />
+                                            <div className="absolute bottom-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded">
+                                                {formatTime(videoData.duration)}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Info & Links */}
+                                    <div className="w-full md:w-2/3">
+                                        <h2 className="text-xl font-bold text-white mb-2 line-clamp-2">{videoData.title}</h2>
+                                        <p className="text-slate-400 text-sm mb-4">Subido por: <span className="text-orange-400">{videoData.author}</span></p>
+                                        
+                                        <div className="space-y-3">
+                                            <p className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-2">Calidades Disponibles:</p>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                {videoData.qualities.map((video, index) => (
+                                                    <a 
+                                                        key={index}
+                                                        href={video.url}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="group flex items-center justify-between bg-slate-700/50 hover:bg-orange-600/20 border border-slate-600 hover:border-orange-500 rounded-lg p-3 transition-all"
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={`w-2 h-2 rounded-full ${video.name === 'full' || video.name === 'quad' ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]' : 'bg-slate-400'}`}></div>
+                                                            <span className="font-mono font-bold text-white uppercase">
+                                                                {video.name === 'quad' ? '4K (Quad)' : 
+                                                                 video.name === 'full' ? '1080p (Full)' : 
+                                                                 video.name === 'hd' ? '720p (HD)' : 
+                                                                 video.name === 'sd' ? '480p (SD)' : 
+                                                                 video.name === 'low' ? '360p (Low)' : 
+                                                                 video.name === 'lowest' ? '240p' : video.name}
+                                                            </span>
+                                                        </div>
+                                                        <Download size={16} className="text-slate-400 group-hover:text-orange-400 transition-colors" />
+                                                    </a>
+                                                ))}
+                                            </div>
+                                            <p className="text-xs text-slate-500 mt-4 text-center">
+                                                * Si la descarga no inicia, haz clic derecho en el botón y elige "Guardar enlace como...".
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                        
+                    </div>
+
+                    {/* Footer */}
+                    <div className="fixed bottom-4 right-4 text-slate-600 text-xs">
+                        Powered by React & Tailwind
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+        // Inicializar iconos de Lucide
+        lucide.createIcons();
+    </script>
+</body>
+</html>
